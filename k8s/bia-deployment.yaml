@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bia
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bia
+  template:
+    metadata:
+      labels:
+        app: bia
+    spec:
+      containers:
+      - name: bia
+        image: bia:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DB_USER
+          value: "postgres"
+        - name: DB_PWD
+          value: "postgres"
+        - name: DB_HOST
+          value: "postgres"
+        - name: DB_PORT
+          value: "5432"
