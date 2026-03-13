@@ -48,6 +48,7 @@
     ],
     "resources": [
       "file://AmazonQ.md",
+      "file://k8s/README.md",
       "file://README.md",
       "file://.kiro/rules/**/*.md"
     ]
