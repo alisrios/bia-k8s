@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: bia-ingress
+  annotations:
+    alb.ingress.kubernetes.io/load-balancer-name: bia-eks-application-load-balancer
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/subnets: subnet-0a3781a31aecb27f9,subnet-0244ccc4ef086f0ae # Update with your subnet IDs
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+spec:
+  ingressClassName: alb
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: bia
+            port:
+              number: 80
+      
