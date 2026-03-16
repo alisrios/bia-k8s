@@ -3,10 +3,9 @@ kind: Service
 metadata:
   name: bia
 spec:
-  type: NodePort
+  type: ClusterIP
   selector:
     app: bia
   ports:
   - port: 8080
     targetPort: 8080
-    nodePort: 30001

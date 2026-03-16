@@ -1,18 +1,14 @@
-
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
 - app/bia-deploy.yml
-- app/bia-serviceservice.yml
-- app/postgres-deploy.yml
+- app/bia-service.yml
+- app/postgres-deployment.yml
 - app/postgres-service.yml
 - app/postgres-pvc.yml
 - ingress.yml
-
-
 
 images:
 - name: 976808777516.dkr.ecr.us-east-1.amazonaws.com/bia
   newName: 976808777516.dkr.ecr.us-east-1.amazonaws.com/bia
   newTag: afa3ead8b5b3a613e6a072dc5daf8b008d3c515d
-
