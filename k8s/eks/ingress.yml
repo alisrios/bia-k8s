@@ -5,7 +5,7 @@ metadata:
   annotations:
     alb.ingress.kubernetes.io/load-balancer-name: bia-eks-application-load-balancer
     alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/target-type: instance
     alb.ingress.kubernetes.io/subnets: bia-eks-vpc-public-subnet-1a,bia-eks-vpc-public-subnet-1b
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
 spec:

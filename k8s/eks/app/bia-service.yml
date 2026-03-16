@@ -3,7 +3,7 @@ kind: Service
 metadata:
   name: bia
 spec:
-  type: ClusterIP
+  type: NodePort
   selector:
     app: bia
   ports:
