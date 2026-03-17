@@ -61,12 +61,14 @@ variable "ecr_repositories" {
   type = list(object({
     name                 = string
     image_tag_mutability = string
+    force_delete         = bool
   }))
 
   default = [
     {
       name                 = "bia"
       image_tag_mutability = "MUTABLE"
+      force_delete         = true
     }
   ]
 }

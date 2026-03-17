@@ -3,10 +3,10 @@ kind: Ingress
 metadata:
   name: bia-ingress
   annotations:
-    alb.ingress.kubernetes.io/load-balancer-name: bia-eks-application-load-balancer
+    alb.ingress.kubernetes.io/load-balancer-name: bia-application-load-balancer
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: instance
-    alb.ingress.kubernetes.io/subnets: bia-eks-vpc-public-subnet-1a,bia-eks-vpc-public-subnet-1b
+    alb.ingress.kubernetes.io/subnets: subnet-0910d37fd2525979f,subnet-094dd8586208b8de6
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
 spec:
   ingressClassName: alb

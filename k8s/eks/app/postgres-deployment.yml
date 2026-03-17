@@ -24,10 +24,11 @@ spec:
           value: "postgres"
         - name: POSTGRES_DB
           value: "bia"
+        - name: PGDATA
+          value: "/var/lib/postgresql/data/pgdata"
         volumeMounts:
         - name: postgres-storage
           mountPath: /var/lib/postgresql/data
       volumes:
       - name: postgres-storage
-        persistentVolumeClaim:
-          claimName: postgres-pvc
+        emptyDir: {}        
