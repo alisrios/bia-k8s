@@ -81,3 +81,56 @@ variable "eks_access_entrys" {
   }
 
 }
+
+# Variáveis do RDS
+
+variable "rds" {
+  type = object({
+    identifier              = string
+    allocated_storage       = number
+    storage_type            = string
+    engine                  = string
+    engine_version          = string
+    instance_class          = string
+    username                = string
+    password                = string
+    db_name                 = string
+    parameter_group_name    = string
+    publicly_accessible     = bool
+    skip_final_snapshot     = bool
+    backup_retention_period = number
+    multi_az                = bool
+    storage_encrypted       = bool
+
+  })
+
+  default = {
+    identifier              = "db-bia-k8s"
+    allocated_storage       = 20 # Mínimo para RDS
+    storage_type            = "gp2"
+    engine                  = "postgres"
+    engine_version          = "17.1"
+    instance_class          = "db.t4g.micro"
+    username                = "postgres"
+    password                = "postgres"
+    db_name                 = "bia"
+    parameter_group_name    = "default.postgres17"
+    publicly_accessible     = false
+    skip_final_snapshot     = true
+    backup_retention_period = 0 # Sem backups    
+    multi_az                = false
+    storage_encrypted       = true
+  }
+}
+
+variable "rds_subnet_group" {
+  type = object({
+    name        = string
+    description = string
+  })
+
+  default = {
+    name        = "bia-eks-rds-subnet-group"
+    description = "Subnet group for BIA RDS instance"
+  }
+}
