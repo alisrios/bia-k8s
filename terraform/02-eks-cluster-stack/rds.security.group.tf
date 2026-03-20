@@ -1,6 +1,6 @@
-resource "aws_security_group" "bia_db_tf" {
-  name        = "bia-db-tf"
-  description = "Acesso ao bia-db-tf"
+resource "aws_security_group" "bia_eks_db" {
+  name        = "bia-eks-db"
+  description = "Acesso ao bia-eks-db"
   vpc_id      = data.aws_vpc.this.id
 
   #ingress {
@@ -20,7 +20,7 @@ resource "aws_security_group" "bia_db_tf" {
   }
 
   tags = {
-    Name = "bia-db-tf"
+    Name = "bia-eks-db"
   }
 
 }

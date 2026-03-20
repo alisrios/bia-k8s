@@ -105,11 +105,11 @@ variable "rds" {
   })
 
   default = {
-    identifier              = "db-bia-k8s"
+    identifier              = "db-bia-eks"
     allocated_storage       = 20 # Mínimo para RDS
     storage_type            = "gp2"
     engine                  = "postgres"
-    engine_version          = "17.1"
+    engine_version          = "17.6"
     instance_class          = "db.t4g.micro"
     username                = "postgres"
     password                = "postgres"
