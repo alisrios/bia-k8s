@@ -14,7 +14,7 @@ resource "aws_db_instance" "this" {
   backup_retention_period = var.rds.backup_retention_period
   multi_az                = var.rds.multi_az
   storage_encrypted       = var.rds.storage_encrypted
-  vpc_security_group_ids  = [aws_security_group.bia_db_tf.id]
+  vpc_security_group_ids  = [aws_security_group.bia_eks_db.id]
   db_subnet_group_name    = aws_db_subnet_group.this.name
 
 
