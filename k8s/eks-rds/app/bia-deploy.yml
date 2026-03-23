@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bia
+  labels:
+    app: bia
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: bia
+  template:
+    metadata:
+      labels:
+        app: bia
+    spec:
+      containers:
+      - name: bia
+        image: 976808777516.dkr.ecr.us-east-1.amazonaws.com/bia
+        ports:
+        - containerPort: 8080        
+        env:
+        - name: DB_USER
+          value: "postgres"
+        - name: DB_PWD
+          value: "postgres"
+        - name: DB_HOST
+          value: "db-bia-eks.cs9w2owgmo8f.us-east-1.rds.amazonaws.com"
+        - name: DB_PORT
+          value: "5432"
