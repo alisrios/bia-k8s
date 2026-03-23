@@ -8,11 +8,10 @@ Manifestos Kubernetes para execução da BIA em um cluster EKS provisionado via 
 k8s/eks/
 ├── app/
 │   ├── bia-deploy.yml           # Deployment da aplicação BIA
-│   ├── bia-service.yml          # Service ClusterIP da BIA
+│   ├── bia-service.yml          # Service NodePort da BIA
 │   ├── postgres-deployment.yml  # Deployment do PostgreSQL 17.1
-│   ├── postgres-service.yml     # Service ClusterIP do PostgreSQL
-│   └── postgres-pvc.yml         # PersistentVolumeClaim de 1Gi
-├── ingress.yml                  # Ingress ALB (AWS Load Balancer Controller)
+│   └── postgres-service.yml     # Service ClusterIP do PostgreSQL
+├── ingress.yml                  # Ingress ALB com HTTPS (certificado ACM)
 └── kustomization.yml            # Kustomize com image override
 ```
 
@@ -22,6 +21,7 @@ k8s/eks/
 - AWS Load Balancer Controller instalado via Helm (provisionado pelo Terraform)
 - `kubectl` configurado para o cluster EKS
 - Imagem da BIA publicada no ECR
+- Certificado SSL/TLS no AWS Certificate Manager (ACM)
 
 ## Infraestrutura provisionada pelo Terraform
 
@@ -34,7 +34,8 @@ O Terraform cria:
 | ECR Repository | `bia` |
 | AWS Load Balancer Controller | Helm release no namespace `kube-system` |
 | VPC | `bia-eks-vpc` |
-| Subnets públicas | `bia-eks-vpc-public-subnet-1a`, `bia-eks-vpc-public-subnet-1b` |
+| Subnets públicas | `subnet-066b0291f4ec82a10`, `subnet-063554b73bfa8a081` |
+| Certificado ACM | `arn:aws:acm:us-east-1:976808777516:certificate/a5368b26-d5e7-4606-93bb-b7d764c5575c` |
 
 ## Configuração do kubectl
 
@@ -93,17 +94,21 @@ kubectl get ingress bia-ingress
 
 O campo `ADDRESS` retorna o DNS do ALB. Aguarde alguns minutos até o ALB ser provisionado.
 
+A aplicação estará disponível via HTTPS na porta 443.
+
 ## Arquitetura de rede
 
 ```
-Internet
+Internet (HTTPS:443)
     │
     ▼
 AWS ALB (internet-facing)
-bia-eks-vpc-public-subnet-1a / 1b
+Load Balancer: bia-application-load-balancer
+Subnets: subnet-066b0291f4ec82a10, subnet-063554b73bfa8a081
+SSL/TLS: ACM Certificate
     │
-    ▼ (target-type: ip)
-Service ClusterIP (bia:8080)
+    ▼ (target-type: instance)
+Service NodePort (bia:8080)
     │
     ▼
 Pod BIA (containerPort: 8080)
@@ -112,7 +117,7 @@ Pod BIA (containerPort: 8080)
 Service ClusterIP (postgres:5432)
     │
     ▼
-Pod PostgreSQL + PVC 1Gi
+Pod PostgreSQL (emptyDir storage)
 ```
 
 ## Configuração
@@ -134,7 +139,22 @@ Pod PostgreSQL + PVC 1Gi
 | Usuário | `postgres` |
 | Senha | `postgres` |
 | Banco | `bia` |
-| Storage | PVC de 1Gi (EBS gp2) |
+| Storage | `emptyDir` (dados não persistentes) |
+| PGDATA | `/var/lib/postgresql/data/pgdata` |
+
+> **Atenção:** O PostgreSQL está usando `emptyDir` como volume, o que significa que os dados serão perdidos se o pod for reiniciado. Para produção, considere usar um PersistentVolumeClaim (PVC) com EBS.
+
+### Ingress (ALB)
+
+| Configuração | Valor |
+|---|---|
+| Load Balancer Name | `bia-application-load-balancer` |
+| Scheme | `internet-facing` |
+| Target Type | `instance` |
+| Protocol | HTTPS (porta 443) |
+| SSL Policy | `ELBSecurityPolicy-2016-08` |
+| Certificate ARN | `arn:aws:acm:us-east-1:976808777516:certificate/a5368b26-d5e7-4606-93bb-b7d764c5575c` |
+| Deregistration Delay | 30 segundos |
 
 ## Comandos Úteis
 
@@ -142,7 +162,6 @@ Pod PostgreSQL + PVC 1Gi
 # Status dos recursos
 kubectl get pods
 kubectl get ingress
-kubectl get pvc
 kubectl get svc
 
 # Logs
@@ -158,6 +177,10 @@ docker tag bia:latest 976808777516.dkr.ecr.us-east-1.amazonaws.com/bia:<NOVA_TAG
 docker push 976808777516.dkr.ecr.us-east-1.amazonaws.com/bia:<NOVA_TAG>
 # Atualizar newTag no kustomization.yml e aplicar:
 kubectl apply -k k8s/eks/
+
+# Forçar restart dos pods
+kubectl rollout restart deployment/bia
+kubectl rollout restart deployment/postgres
 ```
 
 ## Limpar recursos
@@ -191,6 +214,7 @@ kubectl describe pod <nome-do-pod>
 ```bash
 kubectl get pods
 kubectl logs deployment/postgres
+kubectl exec -it deployment/postgres -- psql -U postgres -d bia -c "\l"
 ```
 
 **Ingress sem ADDRESS**
@@ -199,3 +223,39 @@ O ALB pode levar 2-5 minutos para ser provisionado. Verifique os eventos:
 ```bash
 kubectl describe ingress bia-ingress
 ```
+
+**Erro de certificado SSL**
+
+Verifique se o certificado ACM está válido e associado ao domínio correto:
+```bash
+aws acm describe-certificate --certificate-arn arn:aws:acm:us-east-1:976808777516:certificate/a5368b26-d5e7-4606-93bb-b7d764c5575c --region us-east-1
+```
+
+**Dados do PostgreSQL perdidos após restart**
+
+O volume `emptyDir` não persiste dados. Para produção, crie um PVC:
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: gp2
+```
+
+E atualize o `postgres-deployment.yml` para usar o PVC ao invés de `emptyDir`.
+
+## Melhorias recomendadas para produção
+
+1. **Persistência de dados:** Substituir `emptyDir` por PersistentVolumeClaim (PVC)
+2. **Secrets:** Mover credenciais do banco para Kubernetes Secrets
+3. **Health checks:** Adicionar `livenessProbe` e `readinessProbe` nos deployments
+4. **Resource limits:** Definir `requests` e `limits` de CPU/memória
+5. **Horizontal Pod Autoscaler:** Configurar HPA para escalar automaticamente
+6. **Backup:** Implementar estratégia de backup do PostgreSQL
+7. **Monitoring:** Integrar com CloudWatch Container Insights ou Prometheus

@@ -6,7 +6,7 @@ metadata:
     alb.ingress.kubernetes.io/load-balancer-name: bia-application-load-balancer
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: instance
-    alb.ingress.kubernetes.io/subnets: subnet-05898e116dba4a044,subnet-033f56e295fa42b82
+    alb.ingress.kubernetes.io/subnets: subnet-01b0ca7f3619ec2b2,subnet-0244e02054872ab5e
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'
     alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-2016-08
     alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:976808777516:certificate/a5368b26-d5e7-4606-93bb-b7d764c5575c

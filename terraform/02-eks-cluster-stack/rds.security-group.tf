@@ -3,14 +3,14 @@ resource "aws_security_group" "bia_eks_db" {
   description = "Acesso ao bia-eks-db"
   vpc_id      = data.aws_vpc.this.id
 
-  #ingress {
-  #description     = "acesso do bia-dev-tf"
-  #from_port       = 5432
-  #to_port         = 5432
-  #protocol        = "tcp"
-  #cidr_blocks     = []
-  #security_groups = [aws_security_group.bia_dev_tf.id]
-  #}
+  ingress {
+    description     = "Acesso do Node-Group"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    cidr_blocks     = []
+    security_groups = [aws_eks_cluster.this.vpc_config[0].cluster_security_group_id]
+  }
 
   egress {
     from_port   = 0
@@ -22,5 +22,4 @@ resource "aws_security_group" "bia_eks_db" {
   tags = {
     Name = "bia-eks-db"
   }
-
 }
