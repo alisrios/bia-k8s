@@ -1,0 +1,59 @@
+name: Bia-Eks Pipeline
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+    - main
+        
+env:
+    REPOSITORY: bia
+    IMAGE_TAG: ${{ github.sha }}
+
+permissions:
+  contents: read
+  id-token: write
+  
+jobs:
+  bia-eks:
+    name: Bia Job
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v5.0.0
+      with:
+        aws-region: ${{ vars.AWS_REGION }}
+        role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push docker image to Amazon ECR
+      env:
+        REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+      run: |
+          docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
+          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        repository: alisrios/bia-k8s
+        token: ${{ secrets.PAT }}
+
+    - name: Kustomize Edit
+      env:
+        REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+      run: |
+          cd ./k8s/eks-rds
+          kustomize edit set image $REGISTRY/$REPOSITORY=$REGISTRY/$REPOSITORY:$IMAGE_TAG
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ./kustomization.yml
+          git commit -m "[BOT] Updating image to $REGISTRY/$REPOSITORY:$IMAGE_TAG"
+          git push
