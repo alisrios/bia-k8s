@@ -36,24 +36,21 @@ jobs:
     - name: Build, tag, and push docker image to Amazon ECR
       env:
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        IMAGE_TAG: ${{ github.sha }}
       run: |
           docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
           docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
 
-    - name: Checkout k8s manifests
+    - name: Checkout code
       uses: actions/checkout@v4
       with:
         repository: alisrios/bia-k8s
         token: ${{ secrets.PAT }}
-        path: k8s-repo
 
     - name: Kustomize Edit
       env:
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        IMAGE_TAG: ${{ github.sha }}
       run: |
-          cd k8s-repo/k8s/eks-rds
+          cd ./k8s/eks-rds
           kustomize edit set image $REGISTRY/$REPOSITORY=$REGISTRY/$REPOSITORY:$IMAGE_TAG
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
