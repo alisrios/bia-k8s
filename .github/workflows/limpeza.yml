@@ -6,11 +6,10 @@ jobs:
   delete-runs:
     runs-on: ubuntu-latest
     permissions:
-      actions: write # Permissão crucial para deletar
+      actions: write
     steps:
-      - name: Delete workflow runs
-        uses: lowply/delete-workflow-runs-action@v1.0.1
-        with:
-          repository: ${{ github.repository }}
-          github_token: ${{ github.token }}
-          delete_run_by_days_old: 0
+      - name: Deletar todas as runs via GitHub CLI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run delete --all --repo ${{ github.repository }}
