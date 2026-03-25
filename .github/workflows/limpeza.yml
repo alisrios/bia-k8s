@@ -1,13 +1,15 @@
-name: Deletar Runs Antigas
+name: Limpeza Total de Runs
 on:
-  workflow_dispatch: # Permite que você execute manualmente
+  workflow_dispatch:
 
 jobs:
   delete-runs:
     runs-on: ubuntu-latest
+    permissions:
+      actions: write # Permissão crucial para deletar
     steps:
       - name: Delete workflow runs
-        uses: Mattraiano/delete-workflow-runs@v2
+        uses: Mattraiano/delete-workflow-runs@v2.0.6
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
