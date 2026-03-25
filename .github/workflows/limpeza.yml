@@ -8,9 +8,10 @@ jobs:
     permissions:
       actions: write
     steps:
-      - name: Deletar todas as runs via Script CLI
+      - name: Deletar runs concluidas via Script CLI
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }} # <--- Aqui está a mágica que faltava!
+          GH_REPO: ${{ github.repository }}
         run: |
-          gh run list --limit 1000 --json databaseId --jq '.[].databaseId' | xargs -I{} gh run delete {}
+          # O --status completed garante que ele não tente apagar a si mesmo
+          gh run list --status completed --limit 1000 --json databaseId --jq '.[].databaseId' | xargs -I{} gh run delete {} || true
