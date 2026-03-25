@@ -9,9 +9,8 @@ jobs:
       actions: write # Permissão crucial para deletar
     steps:
       - name: Delete workflow runs
-        uses: Mattraiano/delete-workflow-runs@v2.0.6
+        uses: lowply/delete-workflow-runs-action@v1.0.1
         with:
-          token: ${{ github.token }}
           repository: ${{ github.repository }}
-          retain_days: 0
-          keep_minimum_runs: 0
+          github_token: ${{ github.token }}
+          delete_run_by_days_old: 0
