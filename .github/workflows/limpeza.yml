@@ -8,8 +8,9 @@ jobs:
     permissions:
       actions: write
     steps:
-      - name: Deletar todas as runs via GitHub CLI
+      - name: Deletar todas as runs via Script CLI
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh run delete --all --repo ${{ github.repository }}
+          # Lista todas as runs, pega o ID e deleta uma por uma
+          gh run list --limit 1000 --json databaseId --jq '.[].databaseId' | xargs -I{} gh run delete {}
