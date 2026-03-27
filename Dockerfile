@@ -1,26 +1,31 @@
 FROM public.ecr.aws/docker/library/node:22-slim
-RUN npm install -g npm@11 --loglevel=error
 
-# Instalando curl
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# 1. Instalando curl e limpando cache do apt para reduzir tamanho
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# OPCIONAL: Se REALMENTE precisar atualizar o npm e o comando padrão falha:
+# RUN curl -L https://www.npmjs.com/install.sh | sh
 
 WORKDIR /usr/src/app
 
-# Copiar package.json raiz primeiro
+# 2. Cache das dependências do Root
 COPY package*.json ./
+# Removi o install global do npm aqui para evitar o erro MODULE_NOT_FOUND
 RUN npm install --loglevel=error
 
-# Copiar package.json do client e instalar dependências (incluindo devDependencies para build)
+# 3. Cache das dependências do Client
 COPY client/package*.json ./client/
-RUN cd client && npm install --legacy-peer-deps --loglevel=error
+# Adicionado --no-audit para acelerar e evitar quebras de rede
+RUN cd client && npm install --legacy-peer-deps --loglevel=error --no-audit
 
-# Copiar todos os arquivos
+# 4. Copiar o restante do código
 COPY . .
 
-# Build do front-end com Vite
+# 5. Build do front-end
 RUN cd client && VITE_API_URL=https://bia-eks.alisriosti.com.br npm run build
 
-# Limpeza das dependências de desenvolvimento do client para reduzir tamanho
+# 6. Limpeza
 RUN cd client && npm prune --production && rm -rf node_modules/.cache
 
 EXPOSE 8080

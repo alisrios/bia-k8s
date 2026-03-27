@@ -43,14 +43,14 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        repository: alisrios/bia-k8s
+        repository: alisrios/bia-k8s-gitops
         token: ${{ secrets.PAT }}
 
     - name: Kustomize Edit
       env:
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
       run: |
-          cd ./k8s/eks-rds
+          cd ./k8s
           kustomize edit set image $REGISTRY/$REPOSITORY=$REGISTRY/$REPOSITORY:$IMAGE_TAG
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
