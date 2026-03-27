@@ -1,0 +1,17 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bia-k8s
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/alisrios/bia-k8s-gitops
+    targetRevision: HEAD
+    path: k8s/.
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      selfHeal: true
