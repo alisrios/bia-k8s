@@ -1,4 +1,4 @@
-FROM public.ecr.aws/docker/library/node:22-slim
+FROM public.ecr.aws/docker/library/node:22.22.1-slim
 
 # 1. Instalando curl e limpando cache do apt para reduzir tamanho
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
