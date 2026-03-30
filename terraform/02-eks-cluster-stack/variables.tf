@@ -134,3 +134,41 @@ variable "rds_subnet_group" {
     description = "Subnet group for BIA RDS instance"
   }
 }
+
+variable "rds_security_group" {
+  type = object({
+    name        = string
+    description = string
+    ingress_rule = object({
+      description = string
+      from_port   = number
+      to_port     = number
+      protocol    = string
+      cidr_blocks = list(string)
+    })
+    egress_rule = object({
+      from_port   = number
+      to_port     = number
+      protocol    = string
+      cidr_blocks = list(string)
+    })
+  })
+
+  default = {
+    name        = "bia-eks-rds-sg"
+    description = "Security group for BIA EKS RDS instance"
+    ingress_rule = {
+      description = "Acesso do eks"
+      from_port   = 5432
+      to_port     = 5432
+      protocol    = "tcp"
+      cidr_blocks = [] # Ajuste conforme necessário
+    }
+    egress_rule = {
+      from_port   = 0
+      to_port     = 0
+      protocol    = "-1"
+      cidr_blocks = ["0.0.0.0/0"]
+    }
+  }
+}
