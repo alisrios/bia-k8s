@@ -1,6 +1,6 @@
-# Deploy da BIA no EKS com RDS (AWS)
+# Deploy da BIA no EKS com RDS e ArgoCD (AWS)
 
-Manifestos Kubernetes para execução da BIA em um cluster EKS com banco de dados PostgreSQL gerenciado pelo Amazon RDS, provisionado via Terraform.
+Manifestos Kubernetes para execução da BIA em um cluster EKS com banco de dados PostgreSQL gerenciado pelo Amazon RDS, provisionado via Terraform, e GitOps com ArgoCD.
 
 ## Estrutura
 
@@ -9,6 +9,11 @@ k8s/eks-rds/
 ├── app/
 │   ├── bia-deploy.yml      # Deployment da aplicação BIA
 │   └── bia-service.yml     # Service NodePort da BIA
+├── argocd/
+│   ├── application.yml     # ArgoCD Application para GitOps
+│   ├── ingress.yml         # Ingress ALB para ArgoCD UI
+│   ├── configmap-patch.yml # ConfigMap para modo insecure
+│   └── kustomization.yml   # Kustomize do ArgoCD
 ├── ingress.yml             # Ingress ALB com HTTPS (certificado ACM)
 └── kustomization.yml       # Kustomize com image override
 ```
@@ -18,9 +23,11 @@ k8s/eks-rds/
 - Cluster EKS provisionado via Terraform (pasta `terraform/`)
 - Instância RDS PostgreSQL provisionada via Terraform
 - AWS Load Balancer Controller instalado via Helm (provisionado pelo Terraform)
+- ArgoCD instalado no namespace `argocd`
 - `kubectl` configurado para o cluster EKS
 - Imagem da BIA publicada no ECR
 - Certificado SSL/TLS no AWS Certificate Manager (ACM)
+- Repositório Git para GitOps (ex: `https://github.com/alisrios/bia-k8s-gitops`)
 
 ## Infraestrutura provisionada pelo Terraform
 
@@ -57,7 +64,9 @@ docker push 976808777516.dkr.ecr.us-east-1.amazonaws.com/bia:<TAG>
 
 ## Deploy
 
-### 1. Atualizar a tag da imagem no kustomization.yml
+### Opção 1: Deploy Manual com Kustomize
+
+#### 1. Atualizar a tag da imagem no kustomization.yml
 
 Edite o campo `newTag` em `kustomization.yml` com o commit SHA ou tag da imagem:
 
@@ -68,25 +77,25 @@ images:
   newTag: <SEU_COMMIT_SHA>
 ```
 
-### 2. Aplicar os manifestos
+#### 2. Aplicar os manifestos
 
 ```bash
 kubectl apply -k k8s/eks-rds/
 ```
 
-### 3. Aguardar os pods ficarem prontos
+#### 3. Aguardar os pods ficarem prontos
 
 ```bash
 kubectl get pods -w
 ```
 
-### 4. Rodar as migrations
+#### 4. Rodar as migrations
 
 ```bash
 kubectl exec -it deployment/bia -- npx sequelize db:migrate
 ```
 
-### 5. Obter o endpoint do Load Balancer
+#### 5. Obter o endpoint do Load Balancer
 
 ```bash
 kubectl get ingress bia-ingress
@@ -96,27 +105,105 @@ O campo `ADDRESS` retorna o DNS do ALB. Aguarde alguns minutos até o ALB ser pr
 
 A aplicação estará disponível via HTTPS na porta 443.
 
+### Opção 2: Deploy com GitOps (ArgoCD)
+
+#### 1. Instalar o ArgoCD
+
+```bash
+# Criar namespace
+kubectl create namespace argocd
+
+# Instalar ArgoCD
+kubectl apply -n argocd --server-side --force-conflicts -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+# Aguardar pods ficarem prontos
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=argocd-server -n argocd --timeout=300s
+```
+
+#### 2. Configurar ArgoCD para aceitar tráfego HTTP (ALB faz terminação SSL)
+
+```bash
+kubectl apply -f k8s/eks-rds/argocd/configmap-patch.yml
+kubectl rollout restart deployment argocd-server -n argocd
+```
+
+#### 3. Aplicar os manifestos do ArgoCD (Ingress + Application)
+
+```bash
+kubectl apply -k k8s/eks-rds/
+```
+
+#### 4. Obter a senha inicial do ArgoCD
+
+```bash
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d && echo
+```
+
+#### 5. Configurar DNS
+
+Crie entradas DNS apontando para o ALB:
+- `argocd.alisriosti.com.br` → DNS do ALB
+- `bia-eks.alisriosti.com.br` → DNS do ALB
+
+```bash
+# Obter DNS do ALB
+kubectl get ingress -A
+```
+
+#### 6. Acessar o ArgoCD
+
+- **URL:** https://argocd.alisriosti.com.br
+- **Usuário:** admin
+- **Senha:** (obtida no passo 4)
+
+**Importante:** Altere a senha após o primeiro login.
+
+#### 7. Sincronizar a aplicação
+
+O ArgoCD está configurado com `syncPolicy.automated.selfHeal: true`, então qualquer mudança no repositório Git será automaticamente aplicada no cluster.
+
+Para sincronizar manualmente:
+```bash
+# Via CLI
+argocd app sync bia-k8s
+
+# Via UI
+Acesse https://argocd.alisriosti.com.br e clique em "Sync"
+```
+
 ## Arquitetura de rede
 
 ```
 Internet (HTTPS:443)
     │
     ▼
-AWS ALB (internet-facing)
-Load Balancer: bia-application-load-balancer
-Subnets: subnet-05898e116dba4a044, subnet-033f56e295fa42b82
+AWS ALB (internet-facing) - Compartilhado
+Load Balancer: k8s-biaalb-fa7f1b247b
+Group Name: bia-alb
+Subnets: subnet-06006850eabb7dba0, subnet-017091556fa6401ef
 SSL/TLS: ACM Certificate
     │
-    ▼ (target-type: instance)
-Service NodePort (bia:8080)
-    │
-    ▼
-Pod BIA (containerPort: 8080)
-    │
-    ▼
-Amazon RDS PostgreSQL
-Endpoint: db-bia-eks.cs9w2owgmo8f.us-east-1.rds.amazonaws.com:5432
+    ├─────────────────────────────────┬──────────────────────────────────┐
+    │                                 │                                  │
+    ▼ Host: bia-eks.alisriosti.com.br│  Host: argocd.alisriosti.com.br  │
+Service NodePort (bia:8080)          │  Service ClusterIP (argocd:80)   │
+target-type: instance                │  target-type: ip                 │
+    │                                 │                                  │
+    ▼                                 ▼                                  │
+Pod BIA (containerPort: 8080)    Pod ArgoCD (containerPort: 8080)      │
+    │                                                                    │
+    ▼                                                                    │
+Amazon RDS PostgreSQL                                                   │
+Endpoint: db-bia-eks.cs9w2owgmo8f.us-east-1.rds.amazonaws.com:5432     │
 ```
+
+### ALB Compartilhado (group.name: bia-alb)
+
+Ambos os Ingress usam `alb.ingress.kubernetes.io/group.name: bia-alb` para compartilhar o mesmo ALB, economizando custos e simplificando o gerenciamento.
+
+**Regras de roteamento:**
+- `argocd.alisriosti.com.br` → ArgoCD Server (porta 80)
+- `bia-eks.alisriosti.com.br` → Aplicação BIA (porta 8080)
 
 ## Configuração
 
@@ -148,13 +235,24 @@ Endpoint: db-bia-eks.cs9w2owgmo8f.us-east-1.rds.amazonaws.com:5432
 
 | Configuração | Valor |
 |---|---|
-| Load Balancer Name | `bia-application-load-balancer` |
+| Group Name | `bia-alb` (compartilhado entre BIA e ArgoCD) |
+| Load Balancer Name | `k8s-biaalb-fa7f1b247b` |
 | Scheme | `internet-facing` |
-| Target Type | `instance` |
 | Protocol | HTTPS (porta 443) |
 | SSL Policy | `ELBSecurityPolicy-2016-08` |
 | Certificate ARN | `arn:aws:acm:us-east-1:976808777516:certificate/a5368b26-d5e7-4606-93bb-b7d764c5575c` |
 | Deregistration Delay | 30 segundos |
+
+**Ingress da BIA:**
+- Target Type: `instance` (NodePort)
+- Host: `bia-eks.alisriosti.com.br`
+- Backend: Service `bia` porta 8080
+
+**Ingress do ArgoCD:**
+- Target Type: `ip` (ClusterIP)
+- Host: `argocd.alisriosti.com.br`
+- Backend: Service `argocd-server` porta 80
+- Healthcheck: `/healthz`
 
 ## Vantagens do RDS vs PostgreSQL em Pod
 
@@ -169,6 +267,8 @@ Endpoint: db-bia-eks.cs9w2owgmo8f.us-east-1.rds.amazonaws.com:5432
 | Custo | Mais alto | Mais baixo |
 
 ## Comandos Úteis
+
+### Aplicação BIA
 
 ```bash
 # Status dos recursos
@@ -198,6 +298,53 @@ kubectl rollout restart deployment/bia
 kubectl run -it --rm debug --image=postgres:17.1 --restart=Never -- psql -h db-bia-eks.cs9w2owgmo8f.us-east-1.rds.amazonaws.com -U postgres -d bia
 ```
 
+### ArgoCD
+
+```bash
+# Status do ArgoCD
+kubectl get pods -n argocd
+kubectl get ingress -n argocd
+
+# Logs do ArgoCD
+kubectl logs -n argocd deployment/argocd-server -f
+
+# Obter senha inicial
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d && echo
+
+# Listar aplicações
+kubectl get applications -n argocd
+
+# Ver status da aplicação BIA
+kubectl get application bia-k8s -n argocd -o yaml
+
+# Sincronizar manualmente
+kubectl patch application bia-k8s -n argocd --type merge -p '{"operation":{"initiatedBy":{"username":"admin"},"sync":{"revision":"HEAD"}}}'
+
+# Pausar sync automático
+kubectl patch application bia-k8s -n argocd --type=json -p='[{"op": "remove", "path": "/spec/syncPolicy/automated"}]'
+
+# Reabilitar sync automático
+kubectl patch application bia-k8s -n argocd --type merge -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":true,"prune":true}}}}'
+
+# Port-forward para acessar localmente (alternativa ao Ingress)
+kubectl port-forward svc/argocd-server -n argocd 8080:80
+```
+
+### ALB
+
+```bash
+# Listar todos os ALBs
+aws elbv2 describe-load-balancers --region us-east-1 --query "LoadBalancers[?Type=='application'].[LoadBalancerName,DNSName,State.Code]" --output table
+
+# Ver regras do listener HTTPS
+ALB_ARN=$(kubectl get ingress bia-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' | xargs -I {} aws elbv2 describe-load-balancers --region us-east-1 --query "LoadBalancers[?DNSName=='{}'].LoadBalancerArn" --output text)
+LISTENER_ARN=$(aws elbv2 describe-listeners --load-balancer-arn $ALB_ARN --region us-east-1 --query "Listeners[?Port==\`443\`].ListenerArn" --output text)
+aws elbv2 describe-rules --listener-arn $LISTENER_ARN --region us-east-1 --query "Rules[].{Priority:Priority,Host:Conditions[?Field=='host-header'].Values}" --output table
+
+# Ver target groups
+aws elbv2 describe-target-groups --load-balancer-arn $ALB_ARN --region us-east-1 --query "TargetGroups[].[TargetGroupName,Port,Protocol,HealthCheckPath]" --output table
+```
+
 ## Limpar recursos
 
 ```bash
@@ -215,6 +362,54 @@ Verifique se o AWS Load Balancer Controller está rodando:
 ```bash
 kubectl get pods -n kube-system | grep aws-load-balancer
 kubectl logs -n kube-system deployment/aws-load-balancer-controller
+```
+
+**Dois ALBs foram criados em vez de um compartilhado**
+
+Isso acontece quando os Ingress não têm o mesmo `group.name`. Verifique:
+```bash
+kubectl get ingress -A -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.annotations.alb\.ingress\.kubernetes\.io/group\.name}{"\n"}{end}'
+```
+
+Ambos devem ter `bia-alb`. Se não tiverem, corrija os manifestos e reaplique. O ALB antigo será deletado automaticamente.
+
+**ArgoCD sobrescreve configurações locais**
+
+Se o ArgoCD está com `syncPolicy.automated.selfHeal: true`, ele vai reverter qualquer mudança manual. Para fazer mudanças temporárias:
+```bash
+# Pausar sync automático
+kubectl patch application bia-k8s -n argocd --type=json -p='[{"op": "remove", "path": "/spec/syncPolicy/automated"}]'
+
+# Fazer suas mudanças...
+
+# Reabilitar sync automático
+kubectl patch application bia-k8s -n argocd --type merge -p '{"spec":{"syncPolicy":{"automated":{"selfHeal":true}}}}'
+```
+
+**ArgoCD mostra "ImagePullBackOff"**
+
+O ArgoCD está tentando usar uma imagem que não existe no ECR. Verifique:
+```bash
+# Ver qual imagem o ArgoCD está tentando usar
+kubectl get deployment bia -o jsonpath='{.spec.template.spec.containers[0].image}'
+
+# Listar imagens disponíveis no ECR
+aws ecr describe-images --repository-name bia --region us-east-1 --query 'imageDetails[*].imageTags'
+```
+
+Atualize o repositório GitOps com a tag correta ou faça push da imagem faltante.
+
+**ArgoCD UI não carrega (erro de certificado ou redirect loop)**
+
+O ArgoCD precisa estar em modo insecure quando atrás de um ALB que faz terminação SSL:
+```bash
+kubectl get configmap argocd-cmd-params-cm -n argocd -o yaml | grep insecure
+```
+
+Deve mostrar `server.insecure: "true"`. Se não, aplique:
+```bash
+kubectl apply -f k8s/eks-rds/argocd/configmap-patch.yml
+kubectl rollout restart deployment argocd-server -n argocd
 ```
 
 **Pod não inicia (ImagePullBackOff)**
@@ -245,6 +440,7 @@ kubectl run -it --rm debug --image=busybox --restart=Never -- nc -zv db-bia-eks.
 O ALB pode levar 2-5 minutos para ser provisionado. Verifique os eventos:
 ```bash
 kubectl describe ingress bia-ingress
+kubectl describe ingress argocd-ingress -n argocd
 ```
 
 **Erro de certificado SSL**
@@ -280,6 +476,11 @@ O security group do RDS deve permitir tráfego na porta 5432 do security group d
 8. **Read Replicas:** Configurar read replicas do RDS para queries de leitura
 9. **Backup strategy:** Configurar snapshots automáticos e retenção adequada
 10. **Network policies:** Implementar network policies para restringir tráfego
+11. **ArgoCD RBAC:** Configurar controle de acesso baseado em roles no ArgoCD
+12. **ArgoCD SSO:** Integrar com provedor de identidade (GitHub, Google, SAML)
+13. **ArgoCD Notifications:** Configurar notificações de deploy (Slack, email)
+14. **Multi-environment:** Separar ambientes (dev, staging, prod) com diferentes Applications
+15. **Image promotion:** Usar tags específicas em vez de `latest` para rastreabilidade
 
 ## Migração de dados
 
