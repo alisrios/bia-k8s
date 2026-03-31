@@ -51,7 +51,7 @@ variable "eks_cluster" {
     node_group_capacity_type          = "ON_DEMAND"
     node_group_scaling_config = {
       desired_size = 2
-      max_size     = 2
+      max_size     = 5
       min_size     = 2
     }
   }

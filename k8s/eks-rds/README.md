@@ -8,7 +8,8 @@ Manifestos Kubernetes para execução da BIA em um cluster EKS com banco de dado
 k8s/eks-rds/
 ├── app/
 │   ├── bia-deploy.yml      # Deployment da aplicação BIA
-│   └── bia-service.yml     # Service NodePort da BIA
+│   ├── bia-service.yml     # Service NodePort da BIA
+│   └── bia-hpa.yml         # HorizontalPodAutoscaler
 ├── argocd/
 │   ├── application.yml     # ArgoCD Application para GitOps
 │   ├── ingress.yml         # Ingress ALB para ArgoCD UI
@@ -23,6 +24,8 @@ k8s/eks-rds/
 - Cluster EKS provisionado via Terraform (pasta `terraform/`)
 - Instância RDS PostgreSQL provisionada via Terraform
 - AWS Load Balancer Controller instalado via Helm (provisionado pelo Terraform)
+- Cluster Autoscaler configurado no node group (provisionado pelo Terraform)
+- Metrics Server instalado no cluster (para HPA funcionar)
 - ArgoCD instalado no namespace `argocd`
 - `kubectl` configurado para o cluster EKS
 - Imagem da BIA publicada no ECR
@@ -150,7 +153,20 @@ Crie entradas DNS apontando para o ALB:
 kubectl get ingress -A
 ```
 
-#### 6. Acessar o ArgoCD
+#### 6. Instalar Metrics Server (necessário para HPA)
+
+```bash
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
+# Aguardar ficar pronto
+kubectl wait --for=condition=ready pod -l k8s-app=metrics-server -n kube-system --timeout=120s
+
+# Verificar
+kubectl top nodes
+kubectl top pods
+```
+
+#### 7. Acessar o ArgoCD
 
 - **URL:** https://argocd.alisriosti.com.br
 - **Usuário:** admin
@@ -158,7 +174,7 @@ kubectl get ingress -A
 
 **Importante:** Altere a senha após o primeiro login.
 
-#### 7. Sincronizar a aplicação
+#### 8. Sincronizar a aplicação
 
 O ArgoCD está configurado com `syncPolicy.automated.selfHeal: true`, então qualquer mudança no repositório Git será automaticamente aplicada no cluster.
 
@@ -254,6 +270,66 @@ Ambos os Ingress usam `alb.ingress.kubernetes.io/group.name: bia-alb` para compa
 - Backend: Service `argocd-server` porta 80
 - Healthcheck: `/healthz`
 
+### Auto-scaling
+
+#### HPA (Horizontal Pod Autoscaler)
+
+Escala automaticamente os **pods** da aplicação BIA baseado em métricas de CPU e memória.
+
+| Configuração | Valor |
+|---|---|
+| Min Replicas | 2 |
+| Max Replicas | 10 |
+| CPU Target | 70% de utilização |
+| Memory Target | 80% de utilização |
+| Scale Up | Rápido (até 100% ou +2 pods a cada 30s) |
+| Scale Down | Conservador (até 50% a cada 60s, aguarda 5 min) |
+
+**Resource Requests/Limits:**
+```yaml
+requests:
+  cpu: 100m      # 0.1 CPU
+  memory: 128Mi
+limits:
+  cpu: 500m      # 0.5 CPU
+  memory: 512Mi
+```
+
+**Como funciona:**
+1. HPA monitora uso de CPU/memória dos pods
+2. Se uso > 70% CPU ou 80% memória → aumenta pods (até 10)
+3. Se uso normaliza → reduz pods (até 2) após 5 minutos
+
+#### Cluster Autoscaler
+
+Escala automaticamente as **instâncias EC2** do node group baseado em pods pendentes.
+
+| Configuração | Valor |
+|---|---|
+| Min Size | 2 nodes |
+| Max Size | 10 nodes |
+| Desired Size | 2 nodes (inicial) |
+| Scale Up | Quando há pods pendentes (sem recursos) |
+| Scale Down | Após 10 min de node ocioso (< 50% utilização) |
+
+**Como funciona:**
+1. HPA cria novos pods mas não há recursos → pods ficam "Pending"
+2. Cluster Autoscaler detecta pods pendentes → adiciona nodes
+3. Novos nodes ficam prontos → pods são agendados
+4. Quando carga normaliza → HPA remove pods → nodes ficam ociosos
+5. Após 10 min → Cluster Autoscaler remove nodes ociosos (até min: 2)
+
+**Fluxo completo de auto-scaling:**
+```
+Alta carga:
+1. HPA: 2 pods → 10 pods (imediato)
+2. Cluster Autoscaler: 2 nodes → 5 nodes (2-3 min)
+
+Carga normaliza:
+1. HPA: 10 pods → 2 pods (após 5 min)
+2. Cluster Autoscaler: 5 nodes → 2 nodes (após 10 min)
+```
+
 ## Vantagens do RDS vs PostgreSQL em Pod
 
 | Aspecto | RDS | PostgreSQL em Pod |
@@ -296,6 +372,37 @@ kubectl rollout restart deployment/bia
 
 # Verificar conectividade com RDS
 kubectl run -it --rm debug --image=postgres:17.1 --restart=Never -- psql -h db-bia-eks.cs9w2owgmo8f.us-east-1.rds.amazonaws.com -U postgres -d bia
+```
+
+### HPA e Auto-scaling
+
+```bash
+# Ver status do HPA
+kubectl get hpa
+kubectl describe hpa bia-hpa
+
+# Ver métricas dos pods
+kubectl top pods -l app=bia
+kubectl top nodes
+
+# Testar auto-scaling (gerar carga)
+kubectl run -it --rm load-generator --image=busybox --restart=Never -- /bin/sh -c "while sleep 0.01; do wget -q -O- http://bia:8080/api/versao; done"
+
+# Monitorar scaling em tempo real
+watch kubectl get hpa,pods
+
+# Ver eventos de scaling
+kubectl get events --sort-by='.lastTimestamp' | grep -i "horizontal\|scaled"
+
+# Ver histórico de replicas
+kubectl describe hpa bia-hpa | grep -A 10 "Events:"
+
+# Desabilitar HPA temporariamente
+kubectl scale deployment bia --replicas=2
+kubectl delete hpa bia-hpa
+
+# Reabilitar HPA
+kubectl apply -f k8s/eks-rds/app/bia-hpa.yml
 ```
 
 ### ArgoCD
@@ -410,7 +517,58 @@ Deve mostrar `server.insecure: "true"`. Se não, aplique:
 ```bash
 kubectl apply -f k8s/eks-rds/argocd/configmap-patch.yml
 kubectl rollout restart deployment argocd-server -n argocd
+```bash
+kubectl apply -f k8s/eks-rds/argocd/configmap-patch.yml
+kubectl rollout restart deployment argocd-server -n argocd
 ```
+
+**HPA mostra `<unknown>` nas métricas**
+
+O Metrics Server não está instalado ou não está funcionando:
+```bash
+# Verificar se está instalado
+kubectl get deployment metrics-server -n kube-system
+
+# Se não estiver, instalar
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
+# Aguardar ficar pronto
+kubectl wait --for=condition=ready pod -l k8s-app=metrics-server -n kube-system --timeout=120s
+
+# Verificar logs se houver erro
+kubectl logs -n kube-system deployment/metrics-server
+
+# Testar
+kubectl top nodes
+kubectl top pods
+```
+
+Após instalar, aguarde 1-2 minutos para o HPA começar a coletar métricas.
+
+**HPA não escala os pods**
+
+Verifique se o Deployment tem resource requests configurados:
+```bash
+kubectl get deployment bia -o yaml | grep -A 5 "resources:"
+```
+
+Deve mostrar `requests.cpu` e `requests.memory`. O HPA precisa desses valores para calcular a utilização percentual.
+
+**Pods ficam "Pending" após HPA escalar**
+
+O Cluster Autoscaler vai adicionar nodes automaticamente. Aguarde 2-3 minutos:
+```bash
+# Ver pods pendentes
+kubectl get pods -l app=bia | grep Pending
+
+# Ver eventos do pod
+kubectl describe pod <pod-name>
+
+# Ver se Cluster Autoscaler está adicionando nodes
+kubectl get nodes -w
+```
+
+Se os nodes não forem adicionados, verifique os logs do Cluster Autoscaler (se instalado).
 
 **Pod não inicia (ImagePullBackOff)**
 

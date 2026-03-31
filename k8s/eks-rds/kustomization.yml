@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
 - app/bia-deploy.yml
 - app/bia-service.yml
+- app/bia-hpa.yml
 - ingress.yml
 - argocd/
 
