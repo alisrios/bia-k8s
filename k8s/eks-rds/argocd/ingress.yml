@@ -1,26 +1,27 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: bia-ingress
+  name: argocd-ingress
+  namespace: argocd
   annotations:
     alb.ingress.kubernetes.io/group.name: bia-alb
     alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/target-type: instance
-    alb.ingress.kubernetes.io/subnets: subnet-06006850eabb7dba0,subnet-017091556fa6401ef
+    alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'
     alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-2016-08
     alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:976808777516:certificate/a5368b26-d5e7-4606-93bb-b7d764c5575c
-    alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=30
+    alb.ingress.kubernetes.io/backend-protocol: HTTP
+    alb.ingress.kubernetes.io/healthcheck-path: /healthz
 spec:
   ingressClassName: alb
   rules:
-  - host: bia-eks.alisriosti.com.br
+  - host: argocd.alisriosti.com.br
     http:
       paths:
       - path: /
         pathType: Prefix
         backend:
           service:
-            name: bia
+            name: argocd-server
             port:
-              number: 8080
+              number: 80

@@ -4,7 +4,7 @@ resources:
 - app/bia-deploy.yml
 - app/bia-service.yml
 - ingress.yml
-- argocd/
+- argocd/application.yml
 
 images:
 - name: 976808777516.dkr.ecr.us-east-1.amazonaws.com/bia
