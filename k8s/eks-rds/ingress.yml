@@ -6,7 +6,7 @@ metadata:
     alb.ingress.kubernetes.io/group.name: bia-alb
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: instance
-    alb.ingress.kubernetes.io/subnets: subnet-04403cfe612606b62,subnet-0dc7acf8cd5881d33
+    alb.ingress.kubernetes.io/subnets: subnet-0b6aa136cb88ed12b,subnet-023311fc8950463c0
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'
     alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-2016-08
     alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:976808777516:certificate/a5368b26-d5e7-4606-93bb-b7d764c5575c
